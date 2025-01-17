@@ -3,10 +3,11 @@ const CONFIG = {
 	  'janahernandezaraujo',
 	  'nuriapenya',
 	  'lucasmdo',
-	  'noemishan',
-	  'jordanhillier',
-	  'garretsteider',
 	  'fditrapani',
+	  'joen',
+	  'fcoveram',
+	  'auareyou',
+	  'jaykoster',
 	  'cbusquets1989'
 	]),
 	selectors: {
