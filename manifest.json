@@ -5,7 +5,8 @@
 	"description": "Analyzes a P2 and copies latest posts from selected authors to clipboard",
 	"action": {
 	  "default_icon": "images/a8c-icon.png",
-	  "default_title": "A8C Design"
+	  "default_title": "A8C Design",
+	  "default_popup": "popup.html"
 	},
 	"background": {
 	  "service_worker": "background.js"
@@ -16,14 +17,16 @@
 	  "scripting",
 	  "clipboardWrite",
 	  "storage",
-	  "fetch",
 	  "clipboardRead"
 	],
 	"host_permissions": [
 	  "<all_urls>"
 	],
 	"content_scripts": [{
-	  "matches": ["<all_urls>"],
+	  "matches": [
+		"*://*.wordpress.com/*",
+		"*://*.p2theme.com/*"
+	  ],
 	  "js": ["content.js"]
 	}]
   }

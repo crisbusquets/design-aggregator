@@ -14,21 +14,26 @@ const CONFIG = {
 	  posts: 'article.post',
 	  author: '.entry-author',
 	  title: '.p2020-compact-post__preview a',
-	  preview: '.p2020-compact-post__preview'
+	  preview: '.p2020-compact-post__preview',
+	  date: '.p2020-compact-post__entry-date'
 	}
   };
   
   class PostAggregator {
 	constructor() {
 	  this.setupMessageListener();
+	  console.log('🎉 PostAggregator initialized');
 	}
   
 	setupMessageListener() {
 	  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		if (request.action === "aggregate") {
-		  this.processAndCopy().then(result => {
+		  console.log('📨 Received aggregate request with timeframe:', request.timeframe);
+		  this.processAndCopy(request.timeframe).then(result => {
+			console.log('✅ Process completed:', result);
 			sendResponse(result);
 		  }).catch(error => {
+			console.error('❌ Process failed:', error);
 			sendResponse({ status: "error", message: error.message });
 		  });
 		}
@@ -36,9 +41,10 @@ const CONFIG = {
 	  });
 	}
   
-	async processAndCopy() {
+	async processAndCopy(timeframe = 'all') {
 	  try {
-		const aggregatedData = await this.aggregateData();
+		console.log('🎬 Starting processAndCopy with timeframe:', timeframe);
+		const aggregatedData = await this.aggregateData(timeframe);
 		if (!aggregatedData.snaps.length && !aggregatedData.others.length) {
 		  throw new Error('No posts found matching criteria');
 		}
@@ -56,7 +62,9 @@ const CONFIG = {
 		
 		try {
 		  await navigator.clipboard.writeText(formattedData);
+		  console.log('📋 Data copied to clipboard');
 		} catch (clipboardError) {
+		  console.warn('⚠️ Modern clipboard API failed, trying execCommand:', clipboardError);
 		  try {
 			textarea.select();
 			document.execCommand('copy');
@@ -76,6 +84,127 @@ const CONFIG = {
 	  }
 	}
   
+	isWithinTimeframe(dateString, timeframe) {
+	  console.log('⏰ Checking timeframe for date:', dateString);
+	  
+	  if (timeframe === 'all') {
+		console.log('⏰ Timeframe is "all", accepting post');
+		return true;
+	  }
+	  
+	  try {
+		const postDate = new Date(dateString);
+		console.log('⏰ Parsed date:', postDate);
+		
+		if (isNaN(postDate.getTime())) {
+		  console.error('⏰ Invalid date:', dateString);
+		  return false;
+		}
+		
+		const now = new Date();
+		const diffInDays = (now - postDate) / (1000 * 60 * 60 * 24);
+		
+		console.log('⏰ Date check:', {
+		  postDate: postDate.toISOString(),
+		  now: now.toISOString(),
+		  timeframe,
+		  diffInDays,
+		  isWithin: diffInDays <= parseInt(timeframe)
+		});
+		
+		return diffInDays <= parseInt(timeframe);
+	  } catch (error) {
+		console.error('⏰ Error processing date:', error);
+		return false;
+	  }
+	}
+  
+	async aggregateData(timeframe) {
+	  console.log('🔄 Starting aggregateData with timeframe:', timeframe);
+	  
+	  const data = {
+		snaps: [],
+		others: [],
+		authors: new Set()
+	  };
+  
+	  const posts = Array.from(document.querySelectorAll(CONFIG.selectors.posts));
+	  console.log('🔍 Found total posts:', posts.length);
+  
+	  // Debug: Check the date elements immediately
+	  const dates = Array.from(document.querySelectorAll(CONFIG.selectors.date));
+	  console.log('📅 Date elements found:', dates.length);
+	  console.log('📅 Sample date elements:', dates.slice(0, 3).map(d => ({
+		text: d.textContent,
+		datetime: d.getAttribute('datetime'),
+		element: d
+	  })));
+  
+	  // Debug: Check the first post in detail
+	  if (posts.length > 0) {
+		const firstPost = posts[0];
+		console.log('🔍 First post details:', {
+		  title: firstPost.querySelector(CONFIG.selectors.title)?.textContent,
+		  author: firstPost.querySelector(CONFIG.selectors.author)?.getAttribute('href'),
+		  date: firstPost.querySelector(CONFIG.selectors.date)?.getAttribute('datetime')
+		});
+	  }
+  
+	  for (const post of posts) {
+		try {
+		  console.log('\n🔎 Processing post:', post.querySelector('h1, h2')?.textContent || 'Unknown title');
+		  
+		  const postData = this.extractPostData(post);
+		  if (!postData) {
+			console.log('❌ Post filtered out: Could not extract post data');
+			continue;
+		  }
+		  console.log('✅ Post data extracted:', postData);
+  
+		  const dateEl = post.querySelector(CONFIG.selectors.date);
+		  console.log('📅 Date element found:', {
+			found: !!dateEl,
+			element: dateEl,
+			datetime: dateEl?.getAttribute('datetime'),
+			text: dateEl?.textContent
+		  });
+		  
+		  if (!dateEl || !this.isWithinTimeframe(dateEl.getAttribute('datetime'), timeframe)) {
+			console.log('❌ Post filtered out due to date:', dateEl?.getAttribute('datetime'));
+			continue;
+		  }
+  
+		  const authorWithoutAt = postData.author.replace('@', '');
+		  console.log('👤 Checking author:', authorWithoutAt, 'allowed:', CONFIG.authorAllowList.has(authorWithoutAt));
+		  if (!CONFIG.authorAllowList.has(authorWithoutAt)) {
+			console.log('❌ Post filtered out due to author not in allow list');
+			continue;
+		  }
+  
+		  const content = await this.fetchPostContent(postData.url);
+		  postData.content = content;
+		  data.authors.add(postData.author);
+  
+		  const targetArray = this.isXPost(post) ? data.snaps : data.others;
+		  targetArray.push(postData);
+		  console.log('✅ Post added to', this.isXPost(post) ? 'snaps' : 'others');
+		} catch (error) {
+		  console.error('Error processing post:', error);
+		}
+	  }
+  
+	  console.log('🏁 Aggregation complete:', {
+		snaps: data.snaps.length,
+		others: data.others.length,
+		authors: Array.from(data.authors)
+	  });
+  
+	  return {
+		...data,
+		authors: Array.from(data.authors)
+	  };
+	}
+  
 	async fetchPostContent(url) {
 	  try {
 		console.log('🔍 Fetching content from URL:', url);
@@ -93,10 +222,8 @@ const CONFIG = {
 		const paragraphText = firstParagraph ? firstParagraph.textContent.trim() : '';
 		console.log('📝 First paragraph:', paragraphText.slice(0, 100) + '...');
   
-		// Look for the first media element
 		let figureHTML = '';
 		
-		// First try to find a VideoPress block in comments
 		const blockRegex = /<!--\s*wp:videopress\/video[\s\S]*?-->[\s\S]*?<!--\s*\/wp:videopress\/video\s*-->/g;
 		const videoBlockMatch = entryContent.innerHTML.match(blockRegex);
 		console.log('🎥 Video block found?', !!videoBlockMatch);
@@ -105,7 +232,6 @@ const CONFIG = {
 		  console.log('✅ Using VideoPress block from comments:', videoBlockMatch[0].slice(0, 100) + '...');
 		  figureHTML = videoBlockMatch[0];
 		} else {
-		  // Check for images if no video block found
 		  const imageFigure = entryContent.querySelector('.wp-block-image');
 		  console.log('🖼️ Image figure found?', !!imageFigure);
 		  
@@ -123,41 +249,6 @@ const CONFIG = {
 		console.error(`Error fetching post content for ${url}:`, error);
 		return { paragraph: '', figure: '' };
 	  }
-	}
-  
-	async aggregateData() {
-	  const data = {
-		snaps: [],
-		others: [],
-		authors: new Set()
-	  };
-  
-	  const posts = Array.from(document.querySelectorAll(CONFIG.selectors.posts));
-	  console.log('Found posts:', posts.length);
-  
-	  for (const post of posts) {
-		try {
-		  const postData = this.extractPostData(post);
-		  if (!postData) continue;
-  
-		  const authorWithoutAt = postData.author.replace('@', '');
-		  if (!CONFIG.authorAllowList.has(authorWithoutAt)) continue;
-  
-		  const content = await this.fetchPostContent(postData.url);
-		  postData.content = content;
-		  data.authors.add(postData.author);
-  
-		  const targetArray = this.isXPost(post) ? data.snaps : data.others;
-		  targetArray.push(postData);
-		} catch (error) {
-		  console.error('Error processing post:', error);
-		}
-	  }
-  
-	  return {
-		...data,
-		authors: Array.from(data.authors)
-	  };
 	}
   
 	extractPostData(post) {
@@ -268,4 +359,29 @@ const CONFIG = {
   }
   
   // Initialize the aggregator
-  new PostAggregator();
+  // Debug check if we're already initialized
+// Force debug logging into the page
+const debugLog = (msg) => {
+	console.log(msg);
+	// Also insert into the page for visibility
+	const debugDiv = document.createElement('div');
+	debugDiv.style.cssText = 'position: fixed; top: 0; right: 0; background: black; color: lime; padding: 10px; z-index: 999999; font-family: monospace;';
+	debugDiv.textContent = msg;
+	document.body.appendChild(debugDiv);
+	setTimeout(() => debugDiv.remove(), 3000);
+  };
+  
+// Initialization with basic checks
+const posts = document.querySelectorAll('article.post');
+const dates = document.querySelectorAll('.p2020-compact-post__entry-date');
+
+console.log('Content script executing!', {
+  posts: posts.length,
+  dates: dates.length,
+  url: window.location.href
+});
+
+if (!window._postAggregator) {
+  window._postAggregator = new PostAggregator();
+  console.log('PostAggregator initialized');
+}
