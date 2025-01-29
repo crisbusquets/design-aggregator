@@ -15,45 +15,223 @@ const CONFIG = {
 	  author: '.entry-author',
 	  title: '.p2020-compact-post__preview a',
 	  preview: '.p2020-compact-post__preview',
-	  date: '.p2020-compact-post__entry-date'
+	  date: '.entry-date, .p2020-compact-post__entry-date'
+	},
+	timeframes: {
+	  '1week': 7,
+	  '2weeks': 14,
+	  '3weeks': 21
 	}
   };
   
   class PostAggregator {
 	constructor() {
 	  this.setupMessageListener();
-	  console.log('🎉 PostAggregator initialized');
+	  this.createTimeframeUI();
+	  this.createLoadingOverlay();
+	  this.selectedTimeframe = '2weeks'; // Default to 2 weeks
+	}
+  
+	createLoadingOverlay() {
+	  const overlay = document.createElement('div');
+	  overlay.id = 'aggregatorLoadingOverlay';
+	  overlay.style.cssText = `
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background-color: rgba(255, 255, 255, 0.9);
+		display: none;
+		justify-content: center;
+		align-items: center;
+		z-index: 999999;
+		backdrop-filter: blur(2px);
+	  `;
+  
+	  const content = document.createElement('div');
+	  content.style.cssText = `
+		text-align: center;
+		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+	  `;
+  
+	  // Spinner
+	  const spinner = document.createElement('div');
+	  spinner.style.cssText = `
+		width: 40px;
+		height: 40px;
+		margin: 0 auto 20px;
+		border: 3px solid #f3f3f3;
+		border-top: 3px solid #0675C4;
+		border-radius: 50%;
+		animation: aggregatorSpin 1s linear infinite;
+	  `;
+  
+	  // Add the spin animation
+	  const style = document.createElement('style');
+	  style.textContent = `
+		@keyframes aggregatorSpin {
+		  0% { transform: rotate(0deg); }
+		  100% { transform: rotate(360deg); }
+		}
+	  `;
+	  document.head.appendChild(style);
+  
+	  const status = document.createElement('div');
+	  status.id = 'aggregatorLoadingStatus';
+	  status.style.cssText = `
+		color: #0675C4;
+		font-size: 16px;
+		margin-bottom: 8px;
+		font-weight: 500;
+	  `;
+	  status.textContent = 'Processing posts...';
+  
+	  const subStatus = document.createElement('div');
+	  subStatus.id = 'aggregatorLoadingSubStatus';
+	  subStatus.style.cssText = `
+		color: #666;
+		font-size: 14px;
+	  `;
+	  subStatus.textContent = 'This might take a few moments';
+  
+	  content.appendChild(spinner);
+	  content.appendChild(status);
+	  content.appendChild(subStatus);
+	  overlay.appendChild(content);
+	  document.body.appendChild(overlay);
+	}
+  
+	showLoading(status = 'Processing posts...', subStatus = 'This might take a few moments') {
+	  const overlay = document.getElementById('aggregatorLoadingOverlay');
+	  const statusEl = document.getElementById('aggregatorLoadingStatus');
+	  const subStatusEl = document.getElementById('aggregatorLoadingSubStatus');
+	  
+	  if (overlay && statusEl && subStatusEl) {
+		statusEl.textContent = status;
+		subStatusEl.textContent = subStatus;
+		overlay.style.display = 'flex';
+	  }
+	}
+  
+	hideLoading() {
+	  const overlay = document.getElementById('aggregatorLoadingOverlay');
+	  if (overlay) {
+		overlay.style.display = 'none';
+	  }
+	}
+  
+	updateLoadingStatus(status, subStatus) {
+	  const statusEl = document.getElementById('aggregatorLoadingStatus');
+	  const subStatusEl = document.getElementById('aggregatorLoadingSubStatus');
+	  
+	  if (statusEl && subStatus) {
+		if (status) statusEl.textContent = status;
+		if (subStatus) subStatusEl.textContent = subStatus;
+	  }
+	}
+  
+	createTimeframeUI() {
+	  const container = document.createElement('div');
+	  container.id = 'timeframeSelector';
+	  container.style.cssText = `
+		position: fixed;
+		top: 48px;
+		right: 24px;
+		background-color: #fff;
+		padding: 12px;
+		border-radius: 8px;
+		box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+		z-index: 9999998;
+		display: none;
+		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+	  `;
+  
+	  const title = document.createElement('div');
+	  title.textContent = 'Select Timeframe';
+	  title.style.marginBottom = '8px';
+	  title.style.fontWeight = '600';
+	  container.appendChild(title);
+  
+	  Object.entries({
+		'1week': 'Last week',
+		'2weeks': 'Last two weeks',
+		'3weeks': 'Last three weeks'
+	  }).forEach(([value, label]) => {
+		const option = document.createElement('div');
+		option.style.cssText = `
+		  padding: 6px 12px;
+		  cursor: pointer;
+		  border-radius: 4px;
+		  margin: 2px 0;
+		`;
+		option.textContent = label;
+		
+		if (value === this.selectedTimeframe) {
+		  option.style.backgroundColor = '#0675C4';
+		  option.style.color = '#fff';
+		}
+  
+		this.addPassiveEventListener(option, 'mouseover', () => {
+		  if (value !== this.selectedTimeframe) {
+			option.style.backgroundColor = '#f0f0f0';
+		  }
+		});
+		this.addPassiveEventListener(option, 'mouseout', () => {
+		  if (value !== this.selectedTimeframe) {
+			option.style.backgroundColor = 'transparent';
+		  }
+		});
+		
+		option.addEventListener('click', () => {  // Note: click events cannot be passive
+		  this.selectedTimeframe = value;
+		  this.hideTimeframeUI();
+		  this.processAndCopy();
+		});
+		
+		container.appendChild(option);
+	  });
+  
+	  document.body.appendChild(container);
+	}
+  
+	showTimeframeUI() {
+	  const selector = document.getElementById('timeframeSelector');
+	  if (selector) selector.style.display = 'block';
+	}
+  
+	hideTimeframeUI() {
+	  const selector = document.getElementById('timeframeSelector');
+	  if (selector) selector.style.display = 'none';
 	}
   
 	setupMessageListener() {
 	  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		if (request.action === "aggregate") {
-		  console.log('📨 Received aggregate request with timeframe:', request.timeframe);
-		  this.processAndCopy(request.timeframe).then(result => {
-			console.log('✅ Process completed:', result);
-			sendResponse(result);
-		  }).catch(error => {
-			console.error('❌ Process failed:', error);
-			sendResponse({ status: "error", message: error.message });
-		  });
+		  this.showTimeframeUI();
+		  sendResponse({ status: "success", message: "Showing timeframe selector" });
 		}
 		return true;
 	  });
 	}
   
-	async processAndCopy(timeframe = 'all') {
+	async processAndCopy() {
 	  try {
-		console.log('🎬 Starting processAndCopy with timeframe:', timeframe);
-		const aggregatedData = await this.aggregateData(timeframe);
+		this.showLoading();
+		console.log(`Starting aggregation with timeframe: ${this.selectedTimeframe} (${CONFIG.timeframes[this.selectedTimeframe]} days)`);
+		const aggregatedData = await this.aggregateData();
+		
 		if (!aggregatedData.snaps.length && !aggregatedData.others.length) {
 		  throw new Error('No posts found matching criteria');
 		}
 		
+		this.updateLoadingStatus('Formatting data...', 'Almost done!');
 		const formattedData = await this.formatDataForMarkdown(aggregatedData);
 		if (!formattedData) {
 		  throw new Error('No data to format');
 		}
   
+		this.updateLoadingStatus('Copying to clipboard...', 'Just a moment...');
 		const textarea = document.createElement('textarea');
 		textarea.value = formattedData;
 		textarea.style.position = 'fixed';
@@ -62,9 +240,7 @@ const CONFIG = {
 		
 		try {
 		  await navigator.clipboard.writeText(formattedData);
-		  console.log('📋 Data copied to clipboard');
 		} catch (clipboardError) {
-		  console.warn('⚠️ Modern clipboard API failed, trying execCommand:', clipboardError);
 		  try {
 			textarea.select();
 			document.execCommand('copy');
@@ -75,111 +251,192 @@ const CONFIG = {
 		  document.body.removeChild(textarea);
 		}
   
-		this.showNotification("Copied posts to clipboard!", true);
+		this.hideLoading();
+		this.showNotification(`Copied ${aggregatedData.snaps.length + aggregatedData.others.length} posts to clipboard!`, true);
 		return { status: "success", data: formattedData };
 	  } catch (error) {
 		console.error('Failed:', error);
+		this.hideLoading();
 		this.showNotification("Failed to copy: " + error.message, false);
 		throw error;
 	  }
 	}
   
-	isWithinTimeframe(dateString, timeframe) {
-	  console.log('⏰ Checking timeframe for date:', dateString);
+	async loadMorePosts() {
+	  return new Promise((resolve) => {
+		const currentPostCount = document.querySelectorAll(CONFIG.selectors.posts).length;
+		console.log(`Attempting to load more posts. Current count: ${currentPostCount}`);
+		
+		// Scroll to bottom to trigger loading
+		window.scrollTo(0, document.body.scrollHeight);
+		
+		// Wait for new posts to load
+		let checkInterval = setInterval(() => {
+		  const newPostCount = document.querySelectorAll(CONFIG.selectors.posts).length;
+		  console.log(`Checking for new posts. Current: ${newPostCount}, Previous: ${currentPostCount}`);
+		  
+		  if (newPostCount > currentPostCount) {
+			clearInterval(checkInterval);
+			console.log(`Found ${newPostCount - currentPostCount} new posts`);
+			setTimeout(resolve, 1000); // Give a bit more time for everything to load
+		  }
+		}, 500);
+  
+		// Timeout after 10 seconds if no new posts load
+		setTimeout(() => {
+		  clearInterval(checkInterval);
+		  console.log('Timed out waiting for new posts');
+		  resolve();
+		}, 10000);
+	  });
+	}
+  
+	getPostDate(post) {
+	  const dateElement = post.querySelector(CONFIG.selectors.date);
+	  if (!dateElement) return null;
+  
+	  let postDate;
+	  let source = 'unknown';
+  
+	  // Try unix timestamp
+	  const unixtime = dateElement.getAttribute('data-unixtime');
+	  if (unixtime) {
+		postDate = new Date(parseInt(unixtime) * 1000);
+		source = 'unix';
+	  }
+	  // Try title attribute (compact date format)
+	  else if (dateElement.title) {
+		postDate = new Date(dateElement.title);
+		source = 'title';
+	  }
+	  // Try relative time
+	  else {
+		const relativeTime = dateElement.textContent.trim().toLowerCase();
+		postDate = this.parseRelativeTime(relativeTime);
+		source = 'relative';
+	  }
+  
+	  console.log('Date parsing:', {
+		element: dateElement.outerHTML,
+		source,
+		parsed: postDate,
+		text: dateElement.textContent,
+		title: dateElement.title,
+		unixtime
+	  });
+  
+	  return postDate;
+	}
+  
+	isWithinTimeframe(post) {
+	  const postDate = this.getPostDate(post);
+	  if (!postDate || isNaN(postDate.getTime())) {
+		console.warn('Invalid date for post:', post);
+		return false;
+	  }
+  
+	  const now = new Date();
+	  const days = CONFIG.timeframes[this.selectedTimeframe];
+	  const cutoffDate = new Date(now.setDate(now.getDate() - days));
+  
+	  const isWithin = postDate >= cutoffDate;
+	  const title = post.querySelector(CONFIG.selectors.title)?.textContent.trim();
+  
+	  console.log('Timeframe check:', {
+		title,
+		postDate: postDate.toISOString(),
+		cutoffDate: cutoffDate.toISOString(),
+		days,
+		isWithin
+	  });
+  
+	  return isWithin;
+	}
+  
+	parseRelativeTime(relativeTime) {
+	  const now = new Date();
+	  const match = relativeTime.match(/(\d+)\s*(h|hour|hours|d|day|days|w|week|weeks)\s*ago/i);
 	  
-	  if (timeframe === 'all') {
-		console.log('⏰ Timeframe is "all", accepting post');
-		return true;
+	  if (!match) {
+		// Handle date strings like "Jan 28" or "Dec 02, 2024"
+		if (relativeTime.includes(',')) {
+		  return new Date(relativeTime);
+		}
+		// For format like "Jan 28", append current year
+		return new Date(`${relativeTime}, ${new Date().getFullYear()}`);
 	  }
 	  
-	  try {
-		const postDate = new Date(dateString);
-		console.log('⏰ Parsed date:', postDate);
-		
-		if (isNaN(postDate.getTime())) {
-		  console.error('⏰ Invalid date:', dateString);
-		  return false;
-		}
-		
-		const now = new Date();
-		const diffInDays = (now - postDate) / (1000 * 60 * 60 * 24);
-		
-		console.log('⏰ Date check:', {
-		  postDate: postDate.toISOString(),
-		  now: now.toISOString(),
-		  timeframe,
-		  diffInDays,
-		  isWithin: diffInDays <= parseInt(timeframe)
-		});
-		
-		return diffInDays <= parseInt(timeframe);
-	  } catch (error) {
-		console.error('⏰ Error processing date:', error);
-		return false;
+	  const [, amount, unit] = match;
+	  const value = parseInt(amount);
+	  
+	  switch(unit.charAt(0).toLowerCase()) {
+		case 'h':
+		  return new Date(now.getTime() - (value * 60 * 60 * 1000));
+		case 'd':
+		  return new Date(now.getTime() - (value * 24 * 60 * 60 * 1000));
+		case 'w':
+		  return new Date(now.getTime() - (value * 7 * 24 * 60 * 60 * 1000));
+		default:
+		  return now;
 	  }
 	}
   
-	async aggregateData(timeframe) {
-	  console.log('🔄 Starting aggregateData with timeframe:', timeframe);
-	  
+	async aggregateData() {
 	  const data = {
 		snaps: [],
 		others: [],
 		authors: new Set()
 	  };
   
-	  const posts = Array.from(document.querySelectorAll(CONFIG.selectors.posts));
-	  console.log('🔍 Found total posts:', posts.length);
+	  let keepLoading = true;
+	  let previousPostCount = 0;
+	  let noNewPostsCount = 0;
+	  let oldPostsCount = 0;
+	  let processedCount = 0;
   
-	  // Debug: Check the date elements immediately
-	  const dates = Array.from(document.querySelectorAll(CONFIG.selectors.date));
-	  console.log('📅 Date elements found:', dates.length);
-	  console.log('📅 Sample date elements:', dates.slice(0, 3).map(d => ({
-		text: d.textContent,
-		datetime: d.getAttribute('datetime'),
-		element: d
-	  })));
+	  while (keepLoading) {
+		const posts = Array.from(document.querySelectorAll(CONFIG.selectors.posts));
+		console.log(`Processing posts ${previousPostCount + 1} to ${posts.length}`);
+		
+		this.updateLoadingStatus(
+		  'Processing posts...',
+		  `Found ${processedCount} matching posts. Loading more...`
+		);
   
-	  // Debug: Check the first post in detail
-	  if (posts.length > 0) {
-		const firstPost = posts[0];
-		console.log('🔍 First post details:', {
-		  title: firstPost.querySelector(CONFIG.selectors.title)?.textContent,
-		  author: firstPost.querySelector(CONFIG.selectors.author)?.getAttribute('href'),
-		  date: firstPost.querySelector(CONFIG.selectors.date)?.getAttribute('datetime')
-		});
-	  }
+		// Process only new posts
+		const newPosts = posts.slice(previousPostCount);
+		
+		if (newPosts.length === 0) {
+		  noNewPostsCount++;
+		  if (noNewPostsCount >= 3) {
+			console.log('No new posts found after 3 attempts, stopping');
+			break;
+		  }
+		} else {
+		  noNewPostsCount = 0;
+		}
   
-	  for (const post of posts) {
-		try {
-		  console.log('\n🔎 Processing post:', post.querySelector('h1, h2')?.textContent || 'Unknown title');
-		  
+		for (const post of newPosts) {
+		  if (!this.isWithinTimeframe(post)) {
+			oldPostsCount++;
+			if (oldPostsCount > 5) {
+			  console.log('Found 5+ posts outside timeframe, stopping');
+			  keepLoading = false;
+			  break;
+			}
+			continue;
+		  }
+  
 		  const postData = this.extractPostData(post);
-		  if (!postData) {
-			console.log('❌ Post filtered out: Could not extract post data');
-			continue;
-		  }
-		  console.log('✅ Post data extracted:', postData);
-  
-		  const dateEl = post.querySelector(CONFIG.selectors.date);
-		  console.log('📅 Date element found:', {
-			found: !!dateEl,
-			element: dateEl,
-			datetime: dateEl?.getAttribute('datetime'),
-			text: dateEl?.textContent
-		  });
-		  
-		  if (!dateEl || !this.isWithinTimeframe(dateEl.getAttribute('datetime'), timeframe)) {
-			console.log('❌ Post filtered out due to date:', dateEl?.getAttribute('datetime'));
-			continue;
-		  }
+		  if (!postData) continue;
   
 		  const authorWithoutAt = postData.author.replace('@', '');
-		  console.log('👤 Checking author:', authorWithoutAt, 'allowed:', CONFIG.authorAllowList.has(authorWithoutAt));
-		  if (!CONFIG.authorAllowList.has(authorWithoutAt)) {
-			console.log('❌ Post filtered out due to author not in allow list');
-			continue;
-		  }
+		  if (!CONFIG.authorAllowList.has(authorWithoutAt)) continue;
+  
+		  this.updateLoadingStatus(
+			'Processing posts...',
+			`Processing: ${postData.title.slice(0, 40)}${postData.title.length > 40 ? '...' : ''}`
+		  );
   
 		  const content = await this.fetchPostContent(postData.url);
 		  postData.content = content;
@@ -187,22 +444,64 @@ const CONFIG = {
   
 		  const targetArray = this.isXPost(post) ? data.snaps : data.others;
 		  targetArray.push(postData);
-		  console.log('✅ Post added to', this.isXPost(post) ? 'snaps' : 'others');
-		} catch (error) {
-		  console.error('Error processing post:', error);
+		  processedCount++;
+		}
+  
+		previousPostCount = posts.length;
+  
+		if (keepLoading) {
+		  this.updateLoadingStatus('Loading more posts...', 'Scrolling to load more content');
+		  await this.loadMorePosts();
 		}
 	  }
   
-	  console.log('🏁 Aggregation complete:', {
+	  // Restore scroll position
+	  window.scrollTo(0, 0);
+  
+	  console.log('Aggregation complete:', {
 		snaps: data.snaps.length,
 		others: data.others.length,
-		authors: Array.from(data.authors)
+		authors: data.authors.size
 	  });
   
 	  return {
 		...data,
 		authors: Array.from(data.authors)
 	  };
+	}
+  
+	extractPostData(post) {
+	  try {
+		const authorEl = post.querySelector(CONFIG.selectors.author);
+		const titleEl = post.querySelector(CONFIG.selectors.title);
+		
+		if (!titleEl) return null;
+  
+		let author = null;
+		if (authorEl) {
+		  const hrefParts = authorEl.getAttribute('href')?.split('/author/');
+		  if (hrefParts && hrefParts[1]) {
+			author = hrefParts[1].replace('/', '');
+		  }
+		}
+		if (!author) {
+		  const authorMatch = post.classList.toString().match(/author-(\w+)/);
+		  author = authorMatch ? authorMatch[1] : null;
+		}
+		if (!author) return null;
+  
+		let title = titleEl.textContent.trim();
+		title = title.replace(/From \+\w+\s*/, '').trim();
+		
+		return {
+		  title,
+		  url: titleEl.href,
+		  author: `@${author}`
+		};
+	  } catch (error) {
+		console.error('Error extracting post data:', error);
+		return null;
+	  }
 	}
   
 	async fetchPostContent(url) {
@@ -248,40 +547,6 @@ const CONFIG = {
 	  } catch (error) {
 		console.error(`Error fetching post content for ${url}:`, error);
 		return { paragraph: '', figure: '' };
-	  }
-	}
-  
-	extractPostData(post) {
-	  try {
-		const authorEl = post.querySelector(CONFIG.selectors.author);
-		const titleEl = post.querySelector(CONFIG.selectors.title);
-		
-		if (!titleEl) return null;
-  
-		let author = null;
-		if (authorEl) {
-		  const hrefParts = authorEl.getAttribute('href')?.split('/author/');
-		  if (hrefParts && hrefParts[1]) {
-			author = hrefParts[1].replace('/', '');
-		  }
-		}
-		if (!author) {
-		  const authorMatch = post.classList.toString().match(/author-(\w+)/);
-		  author = authorMatch ? authorMatch[1] : null;
-		}
-		if (!author) return null;
-  
-		let title = titleEl.textContent.trim();
-		title = title.replace(/From \+\w+\s*/, '').trim();
-		
-		return {
-		  title,
-		  url: titleEl.href,
-		  author: `@${author}`
-		};
-	  } catch (error) {
-		console.error('Error extracting post data:', error);
-		return null;
 	  }
 	}
   
@@ -337,7 +602,7 @@ const CONFIG = {
 	  notification.textContent = message;
 	  notification.style.cssText = `
 		position: fixed;
-		top: 48px;
+		top: ${document.getElementById('timeframeSelector')?.offsetHeight + 60}px;
 		right: 24px;
 		padding: 10px 20px;
 		background-color: ${isSuccess ? '#003010' : '#F44336'};
@@ -356,32 +621,13 @@ const CONFIG = {
 		notification.remove();
 	  }, 3000);
 	}
+	// Utility to add passive event listeners
+	addPassiveEventListener(element, eventName, handler) {
+		element.addEventListener(eventName, handler, { passive: true });
+		}
+		
   }
   
-  // Initialize the aggregator
-  // Debug check if we're already initialized
-// Force debug logging into the page
-const debugLog = (msg) => {
-	console.log(msg);
-	// Also insert into the page for visibility
-	const debugDiv = document.createElement('div');
-	debugDiv.style.cssText = 'position: fixed; top: 0; right: 0; background: black; color: lime; padding: 10px; z-index: 999999; font-family: monospace;';
-	debugDiv.textContent = msg;
-	document.body.appendChild(debugDiv);
-	setTimeout(() => debugDiv.remove(), 3000);
-  };
   
-// Initialization with basic checks
-const posts = document.querySelectorAll('article.post');
-const dates = document.querySelectorAll('.p2020-compact-post__entry-date');
-
-console.log('Content script executing!', {
-  posts: posts.length,
-  dates: dates.length,
-  url: window.location.href
-});
-
-if (!window._postAggregator) {
-  window._postAggregator = new PostAggregator();
-  console.log('PostAggregator initialized');
-}
+  // Initialize the aggregator
+  new PostAggregator();
