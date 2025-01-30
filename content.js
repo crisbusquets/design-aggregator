@@ -57,6 +57,7 @@ const CONFIG = {
   
 	  // Spinner
 	  const spinner = document.createElement('div');
+	  spinner.id = 'aggregatorSpinner';
 	  spinner.style.cssText = `
 		width: 40px;
 		height: 40px;
@@ -125,9 +126,26 @@ const CONFIG = {
 	  const statusEl = document.getElementById('aggregatorLoadingStatus');
 	  const subStatusEl = document.getElementById('aggregatorLoadingSubStatus');
 	  
-	  if (statusEl && subStatus) {
+	  if (statusEl && subStatusEl) {
 		if (status) statusEl.textContent = status;
 		if (subStatus) subStatusEl.textContent = subStatus;
+	  }
+	}
+  
+	showError(message) {
+	  const statusEl = document.getElementById('aggregatorLoadingStatus');
+	  const subStatusEl = document.getElementById('aggregatorLoadingSubStatus');
+	  const spinner = document.getElementById('aggregatorSpinner');
+	  
+	  if (statusEl && subStatusEl && spinner) {
+		spinner.style.display = 'none';
+		statusEl.textContent = 'Error';
+		subStatusEl.textContent = message;
+		
+		setTimeout(() => {
+		  this.hideLoading();
+		  spinner.style.display = 'block';
+		}, 1500);
 	  }
 	}
   
@@ -183,7 +201,7 @@ const CONFIG = {
 		  }
 		});
 		
-		option.addEventListener('click', () => {  // Note: click events cannot be passive
+		option.addEventListener('click', () => {
 		  this.selectedTimeframe = value;
 		  this.hideTimeframeUI();
 		  this.processAndCopy();
@@ -251,17 +269,42 @@ const CONFIG = {
 		  document.body.removeChild(textarea);
 		}
   
-		this.hideLoading();
-		this.showNotification(`Copied ${aggregatedData.snaps.length + aggregatedData.others.length} posts to clipboard!`, true);
+		// Update loading overlay to show success
+		const spinner = document.getElementById('aggregatorSpinner');
+		const statusEl = document.getElementById('aggregatorLoadingStatus');
+		const subStatusEl = document.getElementById('aggregatorLoadingSubStatus');
+  
+		if (spinner && statusEl && subStatusEl) {
+		  // Hide spinner
+		  spinner.style.display = 'none';
+		  
+		  // Update status text
+		  statusEl.textContent = `${aggregatedData.snaps.length + aggregatedData.others.length} posts copied to clipboard!`;
+		  subStatusEl.textContent = 'Ready to paste in your Design Snaps post :) ';
+		  
+		  // Hide after 5 seconds
+		  setTimeout(() => {
+			this.hideLoading();
+			// Reset the spinner for next use
+			spinner.style.display = 'block';
+		  }, 5000);
+		}
+  
 		return { status: "success", data: formattedData };
 	  } catch (error) {
 		console.error('Failed:', error);
-		this.hideLoading();
-		this.showNotification("Failed to copy: " + error.message, false);
+		this.showError("Failed to copy: " + error.message);
 		throw error;
 	  }
 	}
   
+	addPassiveEventListener(element, eventName, handler) {
+	  element.addEventListener(eventName, handler, { passive: true });
+	}
+  
+	// Include all other existing methods (getPostDate, parseRelativeTime, etc.)
+	// that haven't been modified
+	
 	async loadMorePosts() {
 	  return new Promise((resolve) => {
 		const currentPostCount = document.querySelectorAll(CONFIG.selectors.posts).length;
@@ -381,253 +424,218 @@ const CONFIG = {
 	  }
 	}
   
-	async aggregateData() {
-	  const data = {
-		snaps: [],
-		others: [],
-		authors: new Set()
-	  };
-  
-	  let keepLoading = true;
-	  let previousPostCount = 0;
-	  let noNewPostsCount = 0;
-	  let oldPostsCount = 0;
-	  let processedCount = 0;
-  
-	  while (keepLoading) {
-		const posts = Array.from(document.querySelectorAll(CONFIG.selectors.posts));
-		console.log(`Processing posts ${previousPostCount + 1} to ${posts.length}`);
-		
-		this.updateLoadingStatus(
-		  'Processing posts...',
-		  `Found ${processedCount} matching posts. Loading more...`
-		);
-  
-		// Process only new posts
-		const newPosts = posts.slice(previousPostCount);
-		
-		if (newPosts.length === 0) {
-		  noNewPostsCount++;
-		  if (noNewPostsCount >= 3) {
-			console.log('No new posts found after 3 attempts, stopping');
-			break;
-		  }
-		} else {
-		  noNewPostsCount = 0;
-		}
-  
-		for (const post of newPosts) {
-		  if (!this.isWithinTimeframe(post)) {
-			oldPostsCount++;
-			if (oldPostsCount > 5) {
-			  console.log('Found 5+ posts outside timeframe, stopping');
-			  keepLoading = false;
-			  break;
-			}
-			continue;
-		  }
-  
-		  const postData = this.extractPostData(post);
-		  if (!postData) continue;
-  
-		  const authorWithoutAt = postData.author.replace('@', '');
-		  if (!CONFIG.authorAllowList.has(authorWithoutAt)) continue;
-  
+	  async aggregateData() {
+		const data = {
+		  snaps: [],
+		  others: [],
+		  authors: new Set()
+		};
+	
+		let keepLoading = true;
+		let previousPostCount = 0;
+		let noNewPostsCount = 0;
+		let oldPostsCount = 0;
+		let processedCount = 0;
+	
+		while (keepLoading) {
+		  const posts = Array.from(document.querySelectorAll(CONFIG.selectors.posts));
+		  console.log(`Processing posts ${previousPostCount + 1} to ${posts.length}`);
+		  
 		  this.updateLoadingStatus(
 			'Processing posts...',
-			`Processing: ${postData.title.slice(0, 40)}${postData.title.length > 40 ? '...' : ''}`
+			`Found ${processedCount} matching posts. Loading more...`
 		  );
-  
-		  const content = await this.fetchPostContent(postData.url);
-		  postData.content = content;
-		  data.authors.add(postData.author);
-  
-		  const targetArray = this.isXPost(post) ? data.snaps : data.others;
-		  targetArray.push(postData);
-		  processedCount++;
-		}
-  
-		previousPostCount = posts.length;
-  
-		if (keepLoading) {
-		  this.updateLoadingStatus('Loading more posts...', 'Scrolling to load more content');
-		  await this.loadMorePosts();
-		}
-	  }
-  
-	  // Restore scroll position
-	  window.scrollTo(0, 0);
-  
-	  console.log('Aggregation complete:', {
-		snaps: data.snaps.length,
-		others: data.others.length,
-		authors: data.authors.size
-	  });
-  
-	  return {
-		...data,
-		authors: Array.from(data.authors)
-	  };
-	}
-  
-	extractPostData(post) {
-	  try {
-		const authorEl = post.querySelector(CONFIG.selectors.author);
-		const titleEl = post.querySelector(CONFIG.selectors.title);
-		
-		if (!titleEl) return null;
-  
-		let author = null;
-		if (authorEl) {
-		  const hrefParts = authorEl.getAttribute('href')?.split('/author/');
-		  if (hrefParts && hrefParts[1]) {
-			author = hrefParts[1].replace('/', '');
-		  }
-		}
-		if (!author) {
-		  const authorMatch = post.classList.toString().match(/author-(\w+)/);
-		  author = authorMatch ? authorMatch[1] : null;
-		}
-		if (!author) return null;
-  
-		let title = titleEl.textContent.trim();
-		title = title.replace(/From \+\w+\s*/, '').trim();
-		
-		return {
-		  title,
-		  url: titleEl.href,
-		  author: `@${author}`
-		};
-	  } catch (error) {
-		console.error('Error extracting post data:', error);
-		return null;
-	  }
-	}
-  
-	async fetchPostContent(url) {
-	  try {
-		console.log('🔍 Fetching content from URL:', url);
-		const response = await fetch(url);
-		const html = await response.text();
-		const parser = new DOMParser();
-		const doc = parser.parseFromString(html, 'text/html');
-		
-		const entryContent = doc.querySelector('.entry-content');
-		console.log('📄 Entry content found?', !!entryContent);
-		
-		if (!entryContent) return { paragraph: '', figure: '' };
-  
-		const firstParagraph = entryContent.querySelector('p');
-		const paragraphText = firstParagraph ? firstParagraph.textContent.trim() : '';
-		console.log('📝 First paragraph:', paragraphText.slice(0, 100) + '...');
-  
-		let figureHTML = '';
-		
-		const blockRegex = /<!--\s*wp:videopress\/video[\s\S]*?-->[\s\S]*?<!--\s*\/wp:videopress\/video\s*-->/g;
-		const videoBlockMatch = entryContent.innerHTML.match(blockRegex);
-		console.log('🎥 Video block found?', !!videoBlockMatch);
-		
-		if (videoBlockMatch) {
-		  console.log('✅ Using VideoPress block from comments:', videoBlockMatch[0].slice(0, 100) + '...');
-		  figureHTML = videoBlockMatch[0];
-		} else {
-		  const imageFigure = entryContent.querySelector('.wp-block-image');
-		  console.log('🖼️ Image figure found?', !!imageFigure);
+	
+		  // Process only new posts
+		  const newPosts = posts.slice(previousPostCount);
 		  
-		  if (imageFigure) {
-			figureHTML = imageFigure.outerHTML;
-			console.log('✅ Using image figure HTML');
+		  if (newPosts.length === 0) {
+			noNewPostsCount++;
+			if (noNewPostsCount >= 3) {
+			  console.log('No new posts found after 3 attempts, stopping');
+			  break;
+			}
+		  } else {
+			noNewPostsCount = 0;
+		  }
+	
+		  for (const post of newPosts) {
+			if (!this.isWithinTimeframe(post)) {
+			  oldPostsCount++;
+			  if (oldPostsCount > 5) {
+				console.log('Found 5+ posts outside timeframe, stopping');
+				keepLoading = false;
+				break;
+			  }
+			  continue;
+			}
+	
+			const postData = this.extractPostData(post);
+			if (!postData) continue;
+	
+			const authorWithoutAt = postData.author.replace('@', '');
+			if (!CONFIG.authorAllowList.has(authorWithoutAt)) continue;
+	
+			this.updateLoadingStatus(
+			  'Processing posts...',
+			  `Processing: ${postData.title.slice(0, 40)}${postData.title.length > 40 ? '...' : ''}`
+			);
+	
+			const content = await this.fetchPostContent(postData.url);
+			postData.content = content;
+			data.authors.add(postData.author);
+	
+			const targetArray = this.isXPost(post) ? data.snaps : data.others;
+			targetArray.push(postData);
+			processedCount++;
+		  }
+	
+		  previousPostCount = posts.length;
+	
+		  if (keepLoading) {
+			this.updateLoadingStatus('Loading more posts...', 'Scrolling to load more content');
+			await this.loadMorePosts();
 		  }
 		}
-  
+	
+		// Restore scroll position
+		window.scrollTo(0, 0);
+	
+		console.log('Aggregation complete:', {
+		  snaps: data.snaps.length,
+		  others: data.others.length,
+		  authors: data.authors.size
+		});
+	
 		return {
-		  paragraph: paragraphText,
-		  figure: figureHTML
+		  ...data,
+		  authors: Array.from(data.authors)
 		};
-	  } catch (error) {
-		console.error(`Error fetching post content for ${url}:`, error);
-		return { paragraph: '', figure: '' };
 	  }
-	}
-  
-	formatDataForMarkdown(data) {
-	  const formatPost = post => {
-		const blocks = [];
-		
-		blocks.push(
-		  `<!-- wp:heading -->`,
-		  `<h2><a href="${post.url}">${post.title}</a></h2>`,
-		  `<!-- /wp:heading -->`
-		);
-  
-		blocks.push(
-		  `<!-- wp:paragraph -->`,
-		  `<p>— ${post.author} - [In progress]</p>`,
-		  `<!-- /wp:paragraph -->`
-		);
-  
-		if (post.content?.paragraph) {
+	
+	  extractPostData(post) {
+		try {
+		  const authorEl = post.querySelector(CONFIG.selectors.author);
+		  const titleEl = post.querySelector(CONFIG.selectors.title);
+		  
+		  if (!titleEl) return null;
+	
+		  let author = null;
+		  if (authorEl) {
+			const hrefParts = authorEl.getAttribute('href')?.split('/author/');
+			if (hrefParts && hrefParts[1]) {
+			  author = hrefParts[1].replace('/', '');
+			}
+		  }
+		  if (!author) {
+			const authorMatch = post.classList.toString().match(/author-(\w+)/);
+			author = authorMatch ? authorMatch[1] : null;
+		  }
+		  if (!author) return null;
+	
+		  let title = titleEl.textContent.trim();
+		  title = title.replace(/From \+\w+\s*/, '').trim();
+		  
+		  return {
+			title,
+			url: titleEl.href,
+			author: `@${author}`
+		  };
+		} catch (error) {
+		  console.error('Error extracting post data:', error);
+		  return null;
+		}
+	  }
+	
+	  async fetchPostContent(url) {
+		try {
+		  console.log('🔍 Fetching content from URL:', url);
+		  const response = await fetch(url);
+		  const html = await response.text();
+		  const parser = new DOMParser();
+		  const doc = parser.parseFromString(html, 'text/html');
+		  
+		  const entryContent = doc.querySelector('.entry-content');
+		  console.log('📄 Entry content found?', !!entryContent);
+		  
+		  if (!entryContent) return { paragraph: '', figure: '' };
+	
+		  const firstParagraph = entryContent.querySelector('p');
+		  const paragraphText = firstParagraph ? firstParagraph.textContent.trim() : '';
+		  console.log('📝 First paragraph:', paragraphText.slice(0, 100) + '...');
+	
+		  let figureHTML = '';
+		  
+		  const blockRegex = /<!--\s*wp:videopress\/video[\s\S]*?-->[\s\S]*?<!--\s*\/wp:videopress\/video\s*-->/g;
+		  const videoBlockMatch = entryContent.innerHTML.match(blockRegex);
+		  console.log('🎥 Video block found?', !!videoBlockMatch);
+		  
+		  if (videoBlockMatch) {
+			console.log('✅ Using VideoPress block from comments:', videoBlockMatch[0].slice(0, 100) + '...');
+			figureHTML = videoBlockMatch[0];
+		  } else {
+			const imageFigure = entryContent.querySelector('.wp-block-image');
+			console.log('🖼️ Image figure found?', !!imageFigure);
+			
+			if (imageFigure) {
+			  figureHTML = imageFigure.outerHTML;
+			  console.log('✅ Using image figure HTML');
+			}
+		  }
+	
+		  return {
+			paragraph: paragraphText,
+			figure: figureHTML
+		  };
+		} catch (error) {
+		  console.error(`Error fetching post content for ${url}:`, error);
+		  return { paragraph: '', figure: '' };
+		}
+	  }
+	
+	  formatDataForMarkdown(data) {
+		const formatPost = post => {
+		  const blocks = [];
+		  
+		  blocks.push(
+			`<!-- wp:heading -->`,
+			`<h2><a href="${post.url}">${post.title}</a></h2>`,
+			`<!-- /wp:heading -->`
+		  );
+	
 		  blocks.push(
 			`<!-- wp:paragraph -->`,
-			`<p>${post.content.paragraph}</p>`,
+			`<p>— ${post.author} - [In progress]</p>`,
 			`<!-- /wp:paragraph -->`
 		  );
-		}
-  
-		if (post.content?.figure) {
-		  blocks.push(post.content.figure);
-		}
-  
-		return blocks.join('\n');
-	  };
-  
-	  const sections = [
-		...data.snaps.map(formatPost),
-		...data.others.map(formatPost)
-	  ];
-  
-	  return sections.join('\n\n');
+	
+		  if (post.content?.paragraph) {
+			blocks.push(
+			  `<!-- wp:paragraph -->`,
+			  `<p>${post.content.paragraph}</p>`,
+			  `<!-- /wp:paragraph -->`
+			);
+		  }
+	
+		  if (post.content?.figure) {
+			blocks.push(post.content.figure);
+		  }
+	
+		  return blocks.join('\n');
+		};
+	
+		const sections = [
+		  ...data.snaps.map(formatPost),
+		  ...data.others.map(formatPost)
+		];
+	
+		return sections.join('\n\n');
+	  }
+	
+	  isXPost(post) {
+		return post.classList.contains('tag-p2-xpost') || post.querySelector('.p2020-xpost-icon') !== null;
+	  }
 	}
-  
-	isXPost(post) {
-	  return post.classList.contains('tag-p2-xpost') || post.querySelector('.p2020-xpost-icon') !== null;
-	}
-  
-	showNotification(message, isSuccess = true) {
-	  const existing = document.getElementById('copyNotificationPopover');
-	  if (existing) existing.remove();
-  
-	  const notification = document.createElement('div');
-	  notification.id = 'copyNotificationPopover';
-	  notification.textContent = message;
-	  notification.style.cssText = `
-		position: fixed;
-		top: ${document.getElementById('timeframeSelector')?.offsetHeight + 60}px;
-		right: 24px;
-		padding: 10px 20px;
-		background-color: ${isSuccess ? '#003010' : '#F44336'};
-		color: ${isSuccess ? '#48FF50' : '#FFFFFF'};
-		border-radius: 5px;
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-		font-size: 14px;
-		font-weight: 500;
-		z-index: 9999999;
-		box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-	  `;
-  
-	  document.body.appendChild(notification);
-  
-	  setTimeout(() => {
-		notification.remove();
-	  }, 3000);
-	}
-	// Utility to add passive event listeners
-	addPassiveEventListener(element, eventName, handler) {
-		element.addEventListener(eventName, handler, { passive: true });
-		}
-		
-  }
-  
-  
-  // Initialize the aggregator
-  new PostAggregator();
+	
+	// Initialize the aggregator
+	new PostAggregator();
