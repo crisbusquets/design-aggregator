@@ -1,13 +1,14 @@
 const CONFIG = {
 	authorAllowList: new Set([
-	  'janahernandezaraujo',
+	  'marinamatijaca',
 	  'nuriapenya',
 	  'lucasmdo',
 	  'fditrapani',
 	  'joen',
 	  'fcoveram',
-	  'auareyou',
+	  'ollierozdarz',
 	  'jaykoster',
+	  'mattantwest',
 	  'cbusquets1989'
 	]),
 	selectors: {
@@ -596,16 +597,22 @@ const CONFIG = {
 	  formatDataForMarkdown(data) {
 		const formatPost = post => {
 		  const blocks = [];
+
+		  blocks.push(
+			`<!-- wp:spacer {"height":"32px"} -->`,
+			`<div style="height:32px" aria-hidden="true" class="wp-block-spacer"></div>`,
+			`<!-- /wp:spacer -->`
+		  );
 		  
 		  blocks.push(
-			`<!-- wp:heading -->`,
-			`<h2><a href="${post.url}">${post.title}</a></h2>`,
+			`<!-- wp:heading {"level":3} -->`,
+			`<h3><a href="${post.url}">${post.title}</a></h3>`,
 			`<!-- /wp:heading -->`
 		  );
 	
 		  blocks.push(
 			`<!-- wp:paragraph -->`,
-			`<p>— ${post.author} - [In progress]</p>`,
+			`<p>${post.author} - <code>Early explorations, In progress, Done</code></p>`,
 			`<!-- /wp:paragraph -->`
 		  );
 	
@@ -616,6 +623,12 @@ const CONFIG = {
 			  `<!-- /wp:paragraph -->`
 			);
 		  }
+
+		  blocks.push(
+			`<!-- wp:paragraph -->`,
+			`<p><span style="display:inline-block;width:1em"><img title="linear logo" class="emoji" src="https://s0.wp.com/i/emojis/l/linear-logo.png" alt="linear logo"></span> Part of the {Hosting & Developers, Site Builder & AI, CIAB} initiatives (project) – <span style="display:inline-block;width:1em"><img title="figma" class="emoji" src="https://s0.wp.com/i/emojis/f/figma.png" alt="figma"></span> Figma&nbsp;–&nbsp;<span style="display:inline-block;width:1em"><img title="p2" class="emoji" src="https://s0.wp.com/i/emojis/p/p2.png" alt="p2"></span> <a href="${post.url}">Post</a></p>`,
+			`<!-- /wp:paragraph -->`
+		  );
 	
 		  if (post.content?.figure) {
 			blocks.push(post.content.figure);
